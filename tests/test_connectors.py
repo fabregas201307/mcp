@@ -1,25 +1,50 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
-from app.main import app
+from app.connectors.registry import get_registry
 
-@pytest.mark.asyncio
-async def test_list_connectors():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        resp = await ac.get("/api/connectors")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "connectors" in data
-    assert isinstance(data["connectors"], list)
+def test_list_connectors():
+    registry = get_registry()
+    names = registry.list_names()
+    assert isinstance(names, list)
 
-@pytest.mark.asyncio
-async def test_execute_git_connector(tmp_path):
+def test_execute_git_connector(tmp_path):
     # create dummy repo directories
     (tmp_path / "repo1").mkdir()
     (tmp_path / "repo2").mkdir()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        resp = await ac.post(f"/api/connectors/git/execute", json={"payload": {"root": str(tmp_path)}})
-    assert resp.status_code == 200
-    result = resp.json()["result"]
+    
+    registry = get_registry()
+    # Ensure git connector is registered (it depends on settings)
+    
+    result = registry.execute("git", {"action": "list", "root": str(tmp_path)})
     assert set(result["repositories"]) == {"repo1", "repo2"}
+
+def test_search_git_connector(tmp_path):
+    # create dummy repo and file
+    repo = tmp_path / "repo1"
+    repo.mkdir()
+    
+    # File with keyword in content
+    f1 = repo / "test_match.py"
+    f1.write_text("def my_function():\n    pass", encoding="utf-8")
+    
+    # File with keyword in name
+    f2 = repo / "function_helper.py"
+    f2.write_text("x = 1", encoding="utf-8")
+    
+    # File with no match
+    f3 = repo / "other.py"
+    f3.write_text("x = 1", encoding="utf-8")
+    
+    registry = get_registry()
+    
+    # Search for "function"
+    result = registry.execute("git", {"action": "search", "keyword": "function", "root": str(tmp_path)})
+    
+    paths = [r["path"] for r in result["results"]]
+    assert "repo1/test_match.py" in paths
+    assert "repo1/function_helper.py" in paths
+    assert "repo1/other.py" not in paths
+    
+    # Verify content is returned
+    for r in result["results"]:
+        assert "content" in r
+        assert isinstance(r["content"], str)

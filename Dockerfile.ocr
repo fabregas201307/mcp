@@ -1,0 +1,97 @@
+# OCR extracted Dockerfile (based on attached PNG)
+# Base OS (Ubuntu 22.04; optional CUDA base commented below)
+FROM ubuntu:22.04
+# FROM nvidia/cuda:12.4.0-base-ubuntu22.04
+
+# Proxy configuration (uncomment and adjust if needed)
+# ENV http_proxy="http://proxy.acxl.com:8888" \
+#     https_proxy="http://proxy.acxl.com:8888" \
+#     no_proxy="localhost,127.0.0.1,acxl.com,beehive.com,azurecr.io,azure.net,169.254.169.254,172.16.0.1,figprod3.acxl.com,rongleangapi.acxl.com,rapa.acxl.com"
+
+# Prevents Python from writing .pyc files and enables unbuffered output
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Copy certificates and requirement files (example tarball from OCR)
+# COPY /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/source/anchors/
+# COPY special_lms/figalma.tar.gz /app/figalma.tar.gz
+
+# Basic deps
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    git \
+    wget \
+    unzip \
+    build-essential \
+    cmake \
+    libcurl4-openssl-dev \
+    libfuse3-3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ensure CA certs are set up
+RUN update-ca-certificates
+
+# Create data directory for LM Studio (models, configs, etc.)
+ENV LMSTUDIO_DATA_DIR=/app/data
+WORKDIR /app
+RUN mkdir -p "$LMSTUDIO_DATA_DIR"
+
+# Install LM Studio CLI (adjust URL if LM Studio changes download path)
+# Note: This is illustrative; confirm the URL and package.
+RUN curl -fsSL https://lmstudio.ai/download/latest/linux/x86_64 -o lmstudio.deb \
+    && apt-get update && apt-get install -y ./lmstudio.deb \
+    && rm -f lmstudio.deb
+
+# Optional: Bake a model into the image (or mount later)
+# COPY models/Qwen2-0.5B-Instruct-Q4_K_S.gguf /models/Qwen2-0.5B-Instruct-Q4_K_S.gguf
+# Otherwise, mount /models as a PVC and load by path.
+
+# Jupyter mount example (adjust to your environment)
+# RUN ln -s /jpeputer_nfs /jupyter_nfs
+# VOLUME /mnt/jupyter_nfs
+
+# Clone and build llama.cpp (CPU build shown; set CUDA arch if using CUDA base)
+RUN git clone https://github.com/ggerganov/llama.cpp \
+    && cd llama.cpp \
+    && cmake -S . -B build \
+    # For CUDA builds, uncomment and set your arch: \
+    # -DCMAKE_CUDA_ARCHITECTURES=75 \
+    && cmake --build build --config Release \
+    && cd /
+
+# Install oclif (if LM Studio CLI depends on it; confirm necessity)
+RUN curl -fsSL https://install.oclif.io/download/latest/linux/x64 -o oclifinstall \
+    && chmod +x oclifinstall \
+    && ./oclifinstall --no-check-certificate \
+    && rm -f oclifinstall
+
+# Expose LM Studio API port
+EXPOSE 4280
+
+# Environment variables (can be overridden via k8s env)
+ENV LMSTUDIO_MODEL_PATH="/models/Qwen2-0.5B-Instruct-Q4_K_S.gguf" \
+    LMSTUDIO_CONTEXT_LENGTH=4096 \
+    LMSTUDIO_SERVER_HOST="0.0.0.0" \
+    LMSTUDIO_SERVER_PORT=4280 \
+    LLM_API_GPU_LAYERS=8 \
+    http_proxy="" \
+    https_proxy="" \
+    no_proxy="localhost,127.0.0.1"
+
+# Entrypoint scripts:
+# 1) Pre-load a model, then start server with a custom identifier.
+# 2) Start the OpenAI-compatible HTTP server.
+
+# Example: server pre-load (adjust to LM Studio CLI)
+# RUN lmstudio server --model "${LMSTUDIO_MODEL_PATH}" --gpu-layers "${LLM_API_GPU_LAYERS}" \
+#     --ctx-size "${LMSTUDIO_CONTEXT_LENGTH}" --threads 6 \
+#     --host "${LMSTUDIO_SERVER_HOST}" --port "${LMSTUDIO_SERVER_PORT}" || echo 'server started anyway'
+
+# Example: OpenAI-compatible server command
+# CMD ["lmstudio", "server", "--model", "/models/Qwen2-0.5B-Instruct-Q4_K_S.gguf", \
+#      "--gpu-layers", "${LLM_API_GPU_LAYERS}", "--ctx-size", "${LMSTUDIO_CONTEXT_LENGTH}", \
+#      "--threads", "6", "--host", "${LMSTUDIO_SERVER_HOST}", "--port", "${LMSTUDIO_SERVER_PORT}"]
+
+# Default to a simple sleep to keep container running if no command is provided
+CMD ["bash", "-lc", "sleep infinity"]
