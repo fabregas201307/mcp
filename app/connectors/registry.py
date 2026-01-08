@@ -2,6 +2,7 @@ from typing import Dict, Any
 from .base import BaseConnector, ExecutionResult
 from .git import GitConnector
 from .database import DatabaseConnector
+from .warehouse import WarehouseConnector
 from app.core.config import get_settings
 
 class ConnectorRegistry:
@@ -17,6 +18,10 @@ class ConnectorRegistry:
             self.register(GitConnector("git"))
         if settings.enable_database_connector:
             self.register(DatabaseConnector("database"))
+        
+        # Always register warehouse for now (or add a setting later)
+        self.register(WarehouseConnector("warehouse"))
+            
         self._initialized = True
 
     def register(self, connector: BaseConnector) -> None:

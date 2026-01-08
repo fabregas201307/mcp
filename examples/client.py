@@ -66,6 +66,36 @@ def alpha_strategy(df):
                     else:
                         print(f"Content: {message.content}")
 
+                # 3. Test Skill: List Datasets (Data Discovery)
+                print("\n--- Testing Skill: Data Discovery (List Datasets) ---")
+                try:
+                    print("Calling list_datasets...")
+                    result = await session.call_tool("list_datasets", arguments={})
+                    print(f"Datasets Available: {result.content[0].text}")
+                except Exception as e:
+                    print(f"Error calling list_datasets: {e}")
+
+                # 4. Test Skill: Get Schema (Data Discovery)
+                print("\n--- Testing Skill: Data Discovery (Get Schema) ---")
+                try:
+                    dataset_name = "haver_macro"
+                    print(f"Calling get_dataset_schema for '{dataset_name}'...")
+                    result = await session.call_tool("get_dataset_schema", arguments={"dataset_name": dataset_name})
+                    print(f"Schema Result: {result.content[0].text}")
+                except Exception as e:
+                    print(f"Error calling get_dataset_schema: {e}")
+
+                # 5. Test Prompt: Generate SQL Query
+                print("\n--- Testing Skill: Generate SQL Query (Prompt) ---")
+                try:
+                    dataset_name = "haver_macro"
+                    question = "What is the average GDP growth for US and China in the last 5 years?"
+                    print(f"Fetching 'generate_sql_query' prompt for '{dataset_name}'...")
+                    prompt_result = await session.get_prompt("generate_sql_query", arguments={"dataset_name": dataset_name, "question": question})
+                    print(f"Prompt Content (Context + Question):\n\n{prompt_result.messages[0].content.text}")
+                except Exception as e:
+                    print(f"Error fetching prompt: {e}")
+
     except Exception as e:
         print(f"Error: {e}")
 
